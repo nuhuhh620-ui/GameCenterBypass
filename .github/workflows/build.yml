@@ -1,4 +1,4 @@
-name: Build Dylib
+name: Build Dylib Auto-Fix
 
 on: [push]
 
@@ -22,19 +22,64 @@ jobs:
 
       - name: Download iOS SDK
         run: |
-          curl -L -o iPhoneOS14.5.sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz
+          curl -L -o sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz
           mkdir -p $THEOS/sdks
-          tar -xf iPhoneOS14.5.sdk.tar.xz -C $THEOS/sdks/
-          rm iPhoneOS14.5.sdk.tar.xz
+          tar -xf sdk.tar.xz -C $THEOS/sdks/
+          rm sdk.tar.xz
+
+      - name: Create Correct Files
+        run: |
+          # 1. Create Makefile
+          echo "TARGET := iphone:clang:14.5:14.0" > Makefile
+          echo "ARCHS = arm64" >> Makefile
+          echo "INSTALL_TARGET_PROCESSES = GameCenter" >> Makefile
+          echo "include \$(THEOS)/makefiles/common.mk" >> Makefile
+          echo "" >> Makefile
+          echo "TWEAK_NAME = GameCenterBypass" >> Makefile
+          echo "GameCenterBypass_FILES = Tweak.x" >> Makefile
+          echo "GameCenterBypass_CFLAGS = -fobjc-arc" >> Makefile
+          echo "GameCenterBypass_FRAMEWORKS = GameKit Foundation" >> Makefile
+          echo "" >> Makefile
+          echo "include \$(THEOS_MAKE_PATH)/tweak.mk" >> Makefile
+
+          # 2. Create Control File
+          echo "Package: com.ios.gamecenterbypass" > control
+          echo "Name: GameCenterBypass" >> control
+          echo "Version: 1.0.0" >> control
+          echo "Architecture: iphoneos-arm" >> control
+          echo "Description: Bypass GC" >> control
+          echo "Maintainer: Me" >> control
+          echo "Author: Me" >> control
+          echo "Section: Tweaks" >> control
+
+          # 3. Create Tweak.x (Overwriting yours to ensure correct imports)
+          echo "#import <Foundation/Foundation.h>" > Tweak.x
+          echo "#import <GameKit/GameKit.h>" >> Tweak.x
+          echo "#import <dlfcn.h>" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "@interface GKLocalPlayer (PrivateHook)" >> Tweak.x
+          echo "-(void)cancelAuthentication;" >> Tweak.x
+          echo "@end" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "%hook GKLocalPlayer" >> Tweak.x
+          echo "-(void)setAuthStartTimeStamp:(double)timestamp {" >> Tweak.x
+          echo "    if ([self respondsToSelector:@selector(cancelAuthentication)]) {" >> Tweak.x
+          echo "        [self cancelAuthentication];" >> Tweak.x
+          echo "    }" >> Tweak.x
+          echo "    %orig;" >> Tweak.x
+          echo "}" >> Tweak.x
+          echo "%end" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "%ctor {" >> Tweak.x
+          echo "    NSLog(@\"[GameCenterBypass] Injected\");" >> Tweak.x
+          echo "}" >> Tweak.x
 
       - name: Build Tweak
         run: |
-          # messages=yes prints the specific error if it fails again
           make package FINALPACKAGE=1 messages=yes
 
       - name: Upload Dylib
         uses: actions/upload-artifact@v4
         with:
           name: GameCenterBypass-Dylib
-          # Changed path to capture dylib from any subfolder in obj
-          path: .theos/obj/**/*.dylib
+          path: .theos/obj/debug/*.dylib
