@@ -1,4 +1,4 @@
-name: Build Dylib (Header Fix)
+name: Build Modern Dylib
 
 on: [push]
 
@@ -36,22 +36,17 @@ jobs:
               rm -rf temp_sdks
           fi
 
-      - name: Generate Source Files
+      - name: Generate Modern Source Code
         run: |
-          # --- 1. MAKEFILE (THE FIX IS HERE) ---
+          # --- 1. MAKEFILE ---
           echo "TARGET := iphone:clang:14.5:14.0" > Makefile
           echo "ARCHS = arm64" >> Makefile
-          # Link necessary frameworks
-          echo "GameCenterBypass_FRAMEWORKS = GameKit CoreGraphics Foundation UIKit" >> Makefile
+          echo "GameCenterBypass_FRAMEWORKS = GameKit Foundation UIKit" >> Makefile
           echo "include \$(THEOS)/makefiles/common.mk" >> Makefile
           echo "" >> Makefile
           echo "TWEAK_NAME = GameCenterBypass" >> Makefile
           echo "GameCenterBypass_FILES = Tweak.x" >> Makefile
-          
-          # MAGIC FIX: We force the compiler to include CoreGraphics using '-include'
-          # This fixes 'CGFloat not found' without editing your Tweak.x file.
-          echo "GameCenterBypass_CFLAGS = -fobjc-arc -include CoreGraphics/CoreGraphics.h" >> Makefile
-          
+          echo "GameCenterBypass_CFLAGS = -fobjc-arc" >> Makefile
           echo "" >> Makefile
           echo "include \$(THEOS_MAKE_PATH)/tweak.mk" >> Makefile
 
@@ -65,23 +60,39 @@ jobs:
           echo "Author: Me" >> control
           echo "Section: Tweaks" >> control
 
-          # --- 3. TWEAK.X (YOUR EXACT ORIGINAL CODE) ---
-          echo "#import <dlfcn.h>" > Tweak.x
-          echo "#import <GameKit/GKLocalPlayer.h>" >> Tweak.x
-          echo "" >> Tweak.x
-          echo "@interface GKLocalPlayer (PrivateGameCenterHook)" >> Tweak.x
-          echo "-(void)cancelAuthentication;" >> Tweak.x
-          echo "@end" >> Tweak.x
+          # --- 3. MODERN TWEAK.X ---
+          echo "#import <Foundation/Foundation.h>" > Tweak.x
+          echo "#import <UIKit/UIKit.h>" >> Tweak.x
+          echo "#import <GameKit/GameKit.h>" >> Tweak.x
           echo "" >> Tweak.x
           echo "%hook GKLocalPlayer" >> Tweak.x
-          echo "-(void)setAuthStartTimeStamp:(CGFloat)timestamp {" >> Tweak.x
-          echo "[self cancelAuthentication];" >> Tweak.x
-          echo "%orig();" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "// 1. Block the login handler from being set" >> Tweak.x
+          echo "-(void)setAuthenticateHandler:(void (^)(UIViewController *viewController, NSError *error))handler {" >> Tweak.x
+          echo "    // We do nothing here. By not calling %orig, the game never gets the login callback." >> Tweak.x
+          echo "    NSLog(@\"[GCBypass] Blocked Authenticate Handler\");" >> Tweak.x
+          echo "    return;" >> Tweak.x
           echo "}" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "// 2. Tell the game we are already authenticated (Tricks some games)" >> Tweak.x
+          echo "-(BOOL)isAuthenticated {" >> Tweak.x
+          echo "    return YES;" >> Tweak.x
+          echo "}" >> Tweak.x
+          echo "" >> Tweak.x
           echo "%end" >> Tweak.x
           echo "" >> Tweak.x
-          echo "%ctor {" >> Tweak.x
+          echo "// 3. Brute force UI blocker (If method 1 fails)" >> Tweak.x
+          echo "%hook UIViewController" >> Tweak.x
+          echo "-(void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion {" >> Tweak.x
+          echo "    NSString *className = NSStringFromClass([viewControllerToPresent class]);" >> Tweak.x
+          echo "    // Check if the popup is GameCenter related" >> Tweak.x
+          echo "    if ([className containsString:@\"GK\"] || [className containsString:@\"GameCenter\"] || [className containsString:@\"HostedAuthenticate\"]) {" >> Tweak.x
+          echo "        NSLog(@\"[GCBypass] Blocked UI Popup: %@\", className);" >> Tweak.x
+          echo "        return;" >> Tweak.x
+          echo "    }" >> Tweak.x
+          echo "    %orig;" >> Tweak.x
           echo "}" >> Tweak.x
+          echo "%end" >> Tweak.x
 
       - name: Build Dylib
         run: |
