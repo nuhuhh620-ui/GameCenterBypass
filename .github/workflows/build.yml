@@ -1,4 +1,4 @@
-name: Build Dylib (Path Fix)
+name: Build and Locate Dylib
 
 on: [push]
 
@@ -21,20 +21,15 @@ jobs:
 
       - name: Get iOS SDK
         run: |
-          # 1. Setup SDK folder
           mkdir -p $THEOS/sdks
           cd $THEOS/sdks
-          
-          # 2. Download SDK
           curl -L -o sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz || true
           
-          # 3. Extract (Checking size to ensure it's not a 404 error)
           FILE_SIZE=$(wc -c < sdk.tar.xz | xargs)
           if [ "$FILE_SIZE" -gt 10000000 ]; then
               tar -xf sdk.tar.xz
               rm sdk.tar.xz
           else
-              # Fallback if download fails
               rm -f sdk.tar.xz
               git clone --depth 1 https://github.com/theos/sdks.git temp_sdks
               mv temp_sdks/iPhoneOS14.5.sdk .
@@ -43,12 +38,25 @@ jobs:
 
       - name: Build Dylib
         run: |
-          # Compiling with standard settings
+          # Build using single core
           make -j1 DEBUG=0 FINALPACKAGE=1 messages=yes
+
+      - name: Find and Move Dylib
+        run: |
+          echo "Searching for dylib files..."
+          # Find any .dylib file in the entire folder structure and print it
+          find . -name "*.dylib"
+          
+          # Move the found dylib to the current main directory
+          find . -name "*.dylib" -exec mv {} ./ \;
+          
+          # Verify it is now in the main folder
+          echo "Files in root directory:"
+          ls -la *.dylib
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GameCenterBypass-Dylib
-          # FIX: This wildcard (**) searches every folder for the dylib
-          path: .theos/**/*.dylib
+          # Now we just upload from the main folder (no hidden paths)
+          path: "*.dylib"
