@@ -1,4 +1,4 @@
-name: Build and Locate Dylib
+name: Build Dylib (Exact User Code)
 
 on: [push]
 
@@ -36,27 +36,64 @@ jobs:
               rm -rf temp_sdks
           fi
 
+      - name: Generate Source Files
+        run: |
+          # --- 1. MAKEFILE ---
+          echo "TARGET := iphone:clang:14.5:14.0" > Makefile
+          echo "ARCHS = arm64" >> Makefile
+          # We add CoreGraphics and Foundation here so your CGFloat code works 
+          # without changing your Tweak.x file.
+          echo "GameCenterBypass_FRAMEWORKS = GameKit CoreGraphics Foundation UIKit" >> Makefile
+          echo "include \$(THEOS)/makefiles/common.mk" >> Makefile
+          echo "" >> Makefile
+          echo "TWEAK_NAME = GameCenterBypass" >> Makefile
+          echo "GameCenterBypass_FILES = Tweak.x" >> Makefile
+          echo "GameCenterBypass_CFLAGS = -fobjc-arc" >> Makefile
+          echo "" >> Makefile
+          echo "include \$(THEOS_MAKE_PATH)/tweak.mk" >> Makefile
+
+          # --- 2. CONTROL FILE --- 
+          echo "Package: com.ios.gamecenterbypass" > control
+          echo "Name: GameCenterBypass" >> control
+          echo "Version: 1.0.0" >> control
+          echo "Architecture: iphoneos-arm" >> control
+          echo "Description: Bypass" >> control
+          echo "Maintainer: Me" >> control
+          echo "Author: Me" >> control
+          echo "Section: Tweaks" >> control
+
+          # --- 3. TWEAK.X (YOUR EXACT CODE) ---
+          # We write your code exactly as you provided
+          echo "#import <dlfcn.h>" > Tweak.x
+          echo "#import <GameKit/GKLocalPlayer.h>" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "@interface GKLocalPlayer (PrivateGameCenterHook)" >> Tweak.x
+          echo "-(void)cancelAuthentication;" >> Tweak.x
+          echo "@end" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "%hook GKLocalPlayer" >> Tweak.x
+          echo "-(void)setAuthStartTimeStamp:(CGFloat)timestamp {" >> Tweak.x
+          echo "[self cancelAuthentication];" >> Tweak.x
+          echo "%orig();" >> Tweak.x
+          echo "}" >> Tweak.x
+          echo "%end" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "%ctor {" >> Tweak.x
+          echo "}" >> Tweak.x
+
       - name: Build Dylib
         run: |
-          # Build using single core
+          # Using -j1 to prevent memory crash
           make -j1 DEBUG=0 FINALPACKAGE=1 messages=yes
 
       - name: Find and Move Dylib
         run: |
-          echo "Searching for dylib files..."
-          # Find any .dylib file in the entire folder structure and print it
-          find . -name "*.dylib"
-          
-          # Move the found dylib to the current main directory
+          # Find the file wherever it is hidden
           find . -name "*.dylib" -exec mv {} ./ \;
-          
-          # Verify it is now in the main folder
-          echo "Files in root directory:"
           ls -la *.dylib
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GameCenterBypass-Dylib
-          # Now we just upload from the main folder (no hidden paths)
           path: "*.dylib"
