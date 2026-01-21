@@ -1,4 +1,4 @@
-name: Build Modern Dylib
+name: Build Dylib (Aggressive Cancel)
 
 on: [push]
 
@@ -36,7 +36,7 @@ jobs:
               rm -rf temp_sdks
           fi
 
-      - name: Generate Modern Source Code
+      - name: Generate Aggressive Source Code
         run: |
           # --- 1. MAKEFILE ---
           echo "TARGET := iphone:clang:14.5:14.0" > Makefile
@@ -55,44 +55,61 @@ jobs:
           echo "Name: GameCenterBypass" >> control
           echo "Version: 1.0.0" >> control
           echo "Architecture: iphoneos-arm" >> control
-          echo "Description: Bypass" >> control
+          echo "Description: Aggressive Fix" >> control
           echo "Maintainer: Me" >> control
           echo "Author: Me" >> control
           echo "Section: Tweaks" >> control
 
-          # --- 3. MODERN TWEAK.X ---
+          # --- 3. TWEAK.X (THE LOGIC) ---
           echo "#import <Foundation/Foundation.h>" > Tweak.x
           echo "#import <UIKit/UIKit.h>" >> Tweak.x
           echo "#import <GameKit/GameKit.h>" >> Tweak.x
           echo "" >> Tweak.x
+          echo "@interface GKLocalPlayer (Private)" >> Tweak.x
+          echo "-(void)cancelAuthentication;" >> Tweak.x
+          echo "@end" >> Tweak.x
+          echo "" >> Tweak.x
           echo "%hook GKLocalPlayer" >> Tweak.x
           echo "" >> Tweak.x
-          echo "// 1. Block the login handler from being set" >> Tweak.x
-          echo "-(void)setAuthenticateHandler:(void (^)(UIViewController *viewController, NSError *error))handler {" >> Tweak.x
-          echo "    // We do nothing here. By not calling %orig, the game never gets the login callback." >> Tweak.x
-          echo "    NSLog(@\"[GCBypass] Blocked Authenticate Handler\");" >> Tweak.x
-          echo "    return;" >> Tweak.x
-          echo "}" >> Tweak.x
-          echo "" >> Tweak.x
-          echo "// 2. Tell the game we are already authenticated (Tricks some games)" >> Tweak.x
-          echo "-(BOOL)isAuthenticated {" >> Tweak.x
-          echo "    return YES;" >> Tweak.x
-          echo "}" >> Tweak.x
-          echo "" >> Tweak.x
-          echo "%end" >> Tweak.x
-          echo "" >> Tweak.x
-          echo "// 3. Brute force UI blocker (If method 1 fails)" >> Tweak.x
-          echo "%hook UIViewController" >> Tweak.x
-          echo "-(void)presentViewController:(UIViewController *)viewControllerToPresent animated:(BOOL)flag completion:(void (^)(void))completion {" >> Tweak.x
-          echo "    NSString *className = NSStringFromClass([viewControllerToPresent class]);" >> Tweak.x
-          echo "    // Check if the popup is GameCenter related" >> Tweak.x
-          echo "    if ([className containsString:@\"GK\"] || [className containsString:@\"GameCenter\"] || [className containsString:@\"HostedAuthenticate\"]) {" >> Tweak.x
-          echo "        NSLog(@\"[GCBypass] Blocked UI Popup: %@\", className);" >> Tweak.x
-          echo "        return;" >> Tweak.x
+          echo "// 1. YOUR ORIGINAL METHOD" >> Tweak.x
+          echo "-(void)setAuthStartTimeStamp:(double)timestamp {" >> Tweak.x
+          echo "    if ([self respondsToSelector:@selector(cancelAuthentication)]) {" >> Tweak.x
+          echo "        [self cancelAuthentication];" >> Tweak.x
           echo "    }" >> Tweak.x
           echo "    %orig;" >> Tweak.x
           echo "}" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "// 2. THE BLACK SCREEN SAVER" >> Tweak.x
+          echo "// If the game waits for a login result, give it a 'User Cancelled' error instantly." >> Tweak.x
+          echo "-(void)setAuthenticateHandler:(void (^)(UIViewController *viewController, NSError *error))handler {" >> Tweak.x
+          echo "    if (handler) {" >> Tweak.x
+          echo "        NSError *err = [NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil];" >> Tweak.x
+          echo "        handler(nil, err);" >> Tweak.x
+          echo "    }" >> Tweak.x
+          echo "}" >> Tweak.x
+          echo "" >> Tweak.x
           echo "%end" >> Tweak.x
+          echo "" >> Tweak.x
+          echo "%ctor {" >> Tweak.x
+          echo "    NSLog(@\"[GCBypass] Initialized\");" >> Tweak.x
+          echo "    " >> Tweak.x
+          echo "    // 3. THE REPEATED ATTACK (BACKGROUND TIMER)" >> Tweak.x
+          echo "    // This runs in the background and tries to cancel login every 2 seconds for 1 minute." >> Tweak.x
+          echo "    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{" >> Tweak.x
+          echo "        for (int i = 0; i < 30; i++) {" >> Tweak.x
+          echo "            [NSThread sleepForTimeInterval:2.0];" >> Tweak.x
+          echo "            " >> Tweak.x
+          echo "            // Run the cancel command on the main thread safely" >> Tweak.x
+          echo "            dispatch_async(dispatch_get_main_queue(), ^{" >> Tweak.x
+          echo "                GKLocalPlayer *player = [GKLocalPlayer localPlayer];" >> Tweak.x
+          echo "                if ([player respondsToSelector:@selector(cancelAuthentication)]) {" >> Tweak.x
+          echo "                    [player cancelAuthentication];" >> Tweak.x
+          echo "                    NSLog(@\"[GCBypass] Auto-Cancelling... (Attempt %d)\", i);" >> Tweak.x
+          echo "                }" >> Tweak.x
+          echo "            });" >> Tweak.x
+          echo "        }" >> Tweak.x
+          echo "    });" >> Tweak.x
+          echo "}" >> Tweak.x
 
       - name: Build Dylib
         run: |
