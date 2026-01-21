@@ -1,4 +1,4 @@
-name: Build Dylib (Fixed SDK)
+name: Build Dylib (Bulletproof)
 
 on: [push]
 
@@ -13,54 +13,49 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew update
-          # install xz so we can handle .tar.xz, plus existing tools
           brew install ldid make xz
 
       - name: Install Theos
         run: |
           git clone --depth 1 --recursive https://github.com/theos/theos.git $THEOS
 
-      - name: Download SDK (Official) - robust
+      - name: Get iOS SDK (Smart Method)
         run: |
-          set -euo pipefail
-
-          SDK_URL="https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz"
-          SDK_FILE="iPhoneOS14.5.sdk.tar.xz"
-          DEST="$THEOS/sdks"
-
-          mkdir -p "$DEST"
-
-          # Download with retries and fail on HTTP errors (prevents saving HTML error pages)
-          echo "Downloading $SDK_URL"
-          curl -fL --retry 3 --retry-delay 5 -o "$SDK_FILE" "$SDK_URL"
-
-          # Basic validation
-          if [ ! -s "$SDK_FILE" ]; then
-            echo "::error::Downloaded SDK is empty or missing. Check $SDK_URL"
-            ls -l "$SDK_FILE" || true
-            exit 1
-          fi
-
-          echo "Downloaded file info:"
-          ls -lh "$SDK_FILE"
-          file "$SDK_FILE" || true
-
-          # Try to extract directly with tar -xJf, fallback to xz -d then tar -xf
-          if tar -xJf "$SDK_FILE" -C "$DEST/"; then
-            echo "Extracted SDK with tar -xJf"
+          # 1. Define the target folder
+          mkdir -p $THEOS/sdks
+          cd $THEOS/sdks
+          
+          # 2. Try to download the official compressed SDK (Fast method)
+          echo "Attempting fast download..."
+          curl -L -o iPhoneOS14.5.sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz || true
+          
+          # 3. Verify if the file is valid (larger than 10MB)
+          FILE_SIZE=$(wc -c < iPhoneOS14.5.sdk.tar.xz | xargs)
+          if [ "$FILE_SIZE" -gt 10000000 ]; then
+              echo "Download successful. Extracting..."
+              tar -xf iPhoneOS14.5.sdk.tar.xz
+              rm iPhoneOS14.5.sdk.tar.xz
           else
-            echo "tar -xJf failed, trying xz -d then tar -xf"
-            xz -d -f "$SDK_FILE"   # produces .tar
-            tar -xf "${SDK_FILE%.xz}" -C "$DEST/"
+              echo "Fast download failed (File too small or 404). Switching to Fallback..."
+              rm -f iPhoneOS14.5.sdk.tar.xz
+              
+              # 4. Fallback: Clone the SDK repository (Slow but Guaranteed)
+              git clone --depth 1 https://github.com/theos/sdks.git temp_sdks
+              mv temp_sdks/iPhoneOS14.5.sdk .
+              rm -rf temp_sdks
           fi
-
-          # Cleanup downloaded archives
-          rm -f "$SDK_FILE" "${SDK_FILE%.xz}" || true
+          
+          # 5. Final check to ensure SDK exists
+          if [ -d "iPhoneOS14.5.sdk" ]; then
+              echo "SDK installed successfully!"
+          else
+              echo "::error::Critical Failure: SDK could not be obtained."
+              exit 1
+          fi
 
       - name: Build Dylib
         run: |
-          # Use Single Core (-j1) to prevent memory crashes
+          # Use -j1 to prevent Memory Crash (Exit Code 9)
           make -j1 DEBUG=0 FINALPACKAGE=1 messages=yes
 
       - name: Upload Artifact
