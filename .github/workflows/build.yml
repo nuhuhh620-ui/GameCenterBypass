@@ -1,4 +1,4 @@
-name: Build Dylib (Exact User Code)
+name: Build Dylib (Header Fix)
 
 on: [push]
 
@@ -38,17 +38,20 @@ jobs:
 
       - name: Generate Source Files
         run: |
-          # --- 1. MAKEFILE ---
+          # --- 1. MAKEFILE (THE FIX IS HERE) ---
           echo "TARGET := iphone:clang:14.5:14.0" > Makefile
           echo "ARCHS = arm64" >> Makefile
-          # We add CoreGraphics and Foundation here so your CGFloat code works 
-          # without changing your Tweak.x file.
+          # Link necessary frameworks
           echo "GameCenterBypass_FRAMEWORKS = GameKit CoreGraphics Foundation UIKit" >> Makefile
           echo "include \$(THEOS)/makefiles/common.mk" >> Makefile
           echo "" >> Makefile
           echo "TWEAK_NAME = GameCenterBypass" >> Makefile
           echo "GameCenterBypass_FILES = Tweak.x" >> Makefile
-          echo "GameCenterBypass_CFLAGS = -fobjc-arc" >> Makefile
+          
+          # MAGIC FIX: We force the compiler to include CoreGraphics using '-include'
+          # This fixes 'CGFloat not found' without editing your Tweak.x file.
+          echo "GameCenterBypass_CFLAGS = -fobjc-arc -include CoreGraphics/CoreGraphics.h" >> Makefile
+          
           echo "" >> Makefile
           echo "include \$(THEOS_MAKE_PATH)/tweak.mk" >> Makefile
 
@@ -62,8 +65,7 @@ jobs:
           echo "Author: Me" >> control
           echo "Section: Tweaks" >> control
 
-          # --- 3. TWEAK.X (YOUR EXACT CODE) ---
-          # We write your code exactly as you provided
+          # --- 3. TWEAK.X (YOUR EXACT ORIGINAL CODE) ---
           echo "#import <dlfcn.h>" > Tweak.x
           echo "#import <GameKit/GKLocalPlayer.h>" >> Tweak.x
           echo "" >> Tweak.x
@@ -83,12 +85,10 @@ jobs:
 
       - name: Build Dylib
         run: |
-          # Using -j1 to prevent memory crash
           make -j1 DEBUG=0 FINALPACKAGE=1 messages=yes
 
       - name: Find and Move Dylib
         run: |
-          # Find the file wherever it is hidden
           find . -name "*.dylib" -exec mv {} ./ \;
           ls -la *.dylib
 
