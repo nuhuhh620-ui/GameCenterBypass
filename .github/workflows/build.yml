@@ -1,4 +1,4 @@
-name: Build Dylib (Bulletproof)
+name: Build Dylib (Path Fix)
 
 on: [push]
 
@@ -19,47 +19,36 @@ jobs:
         run: |
           git clone --depth 1 --recursive https://github.com/theos/theos.git $THEOS
 
-      - name: Get iOS SDK (Smart Method)
+      - name: Get iOS SDK
         run: |
-          # 1. Define the target folder
+          # 1. Setup SDK folder
           mkdir -p $THEOS/sdks
           cd $THEOS/sdks
           
-          # 2. Try to download the official compressed SDK (Fast method)
-          echo "Attempting fast download..."
-          curl -L -o iPhoneOS14.5.sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz || true
+          # 2. Download SDK
+          curl -L -o sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz || true
           
-          # 3. Verify if the file is valid (larger than 10MB)
-          FILE_SIZE=$(wc -c < iPhoneOS14.5.sdk.tar.xz | xargs)
+          # 3. Extract (Checking size to ensure it's not a 404 error)
+          FILE_SIZE=$(wc -c < sdk.tar.xz | xargs)
           if [ "$FILE_SIZE" -gt 10000000 ]; then
-              echo "Download successful. Extracting..."
-              tar -xf iPhoneOS14.5.sdk.tar.xz
-              rm iPhoneOS14.5.sdk.tar.xz
+              tar -xf sdk.tar.xz
+              rm sdk.tar.xz
           else
-              echo "Fast download failed (File too small or 404). Switching to Fallback..."
-              rm -f iPhoneOS14.5.sdk.tar.xz
-              
-              # 4. Fallback: Clone the SDK repository (Slow but Guaranteed)
+              # Fallback if download fails
+              rm -f sdk.tar.xz
               git clone --depth 1 https://github.com/theos/sdks.git temp_sdks
               mv temp_sdks/iPhoneOS14.5.sdk .
               rm -rf temp_sdks
           fi
-          
-          # 5. Final check to ensure SDK exists
-          if [ -d "iPhoneOS14.5.sdk" ]; then
-              echo "SDK installed successfully!"
-          else
-              echo "::error::Critical Failure: SDK could not be obtained."
-              exit 1
-          fi
 
       - name: Build Dylib
         run: |
-          # Use -j1 to prevent Memory Crash (Exit Code 9)
+          # Compiling with standard settings
           make -j1 DEBUG=0 FINALPACKAGE=1 messages=yes
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GameCenterBypass-Dylib
-          path: .theos/obj/debug/*.dylib
+          # FIX: This wildcard (**) searches every folder for the dylib
+          path: .theos/**/*.dylib
