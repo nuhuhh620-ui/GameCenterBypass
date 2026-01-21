@@ -1,0 +1,32 @@
+name: Build Dylib
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+
+      - name: Download iOS SDK
+        run: |
+          curl -LO https://github.com/theos/sdks/releases/latest/download/iPhoneOS16.5.sdk.tar.xz
+          mkdir -p ~/theos/sdks
+          tar -xf iPhoneOS16.5.sdk.tar.xz -C ~/theos/sdks
+          rm iPhoneOS16.5.sdk.tar.xz
+
+      - name: Build Tweak
+        run: |
+          make package FINALPACKAGE=1
+
+      - name: Upload Dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameCenterBypass-Dylib
+          path: .theos/obj/debug/*.dylib
