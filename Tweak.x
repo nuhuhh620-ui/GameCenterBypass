@@ -1,23 +1,18 @@
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <GameKit/GameKit.h>
-#import <dlfcn.h>
 
-@interface GKLocalPlayer (PrivateGameCenterHook)
+@interface GKLocalPlayer (Private)
 -(void)cancelAuthentication;
 @end
 
 %hook GKLocalPlayer
-
 -(void)setAuthStartTimeStamp:(double)timestamp {
-    // Call the private method to cancel auth
-    if ([self respondsToSelector:@selector(cancelAuthentication)]) {
-        [self cancelAuthentication];
-    }
-    %orig(timestamp);
+    @try {
+        if ([self respondsToSelector:@selector(cancelAuthentication)]) {
+            [self cancelAuthentication];
+        }
+    } @catch (NSException *e) {}
+    %orig;
 }
-
 %end
-
-%ctor {
-    NSLog(@"[GameCenterBypass] Loaded!");
-}
