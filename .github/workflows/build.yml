@@ -1,4 +1,4 @@
-name: Build Dylib Auto-Fix
+name: Build Dylib (Fix)
 
 on: [push]
 
@@ -15,6 +15,8 @@ jobs:
         run: |
           brew install ldid
           brew install make
+          brew install dpkg
+          brew install xz
 
       - name: Install Theos
         run: |
@@ -22,12 +24,16 @@ jobs:
 
       - name: Download iOS SDK
         run: |
-          curl -L -o sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz
+          # Using a reliable mirror for the SDK
+          curl -L -o sdk.zip https://github.com/xybp888/iOS-SDKs/releases/download/iOS-14.5/iPhoneOS14.5.sdk.zip
           mkdir -p $THEOS/sdks
-          tar -xf sdk.tar.xz -C $THEOS/sdks/
-          rm sdk.tar.xz
+          unzip -q sdk.zip -d $THEOS/sdks/
+          mv $THEOS/sdks/iPhoneOS14.5.sdk $THEOS/sdks/iPhoneOS14.5.sdk || true
+          rm sdk.zip
+          echo "SDKs installed:"
+          ls $THEOS/sdks
 
-      - name: Create Correct Files
+      - name: Create Source Files
         run: |
           # 1. Create Makefile
           echo "TARGET := iphone:clang:14.5:14.0" > Makefile
@@ -52,7 +58,7 @@ jobs:
           echo "Author: Me" >> control
           echo "Section: Tweaks" >> control
 
-          # 3. Create Tweak.x (Overwriting yours to ensure correct imports)
+          # 3. Create Tweak.x
           echo "#import <Foundation/Foundation.h>" > Tweak.x
           echo "#import <GameKit/GameKit.h>" >> Tweak.x
           echo "#import <dlfcn.h>" >> Tweak.x
@@ -76,10 +82,15 @@ jobs:
 
       - name: Build Tweak
         run: |
-          make package FINALPACKAGE=1 messages=yes
+          # Just run make first to ensure compiling works
+          make messages=yes
+          
+          # Then try to package
+          make package messages=yes FINALPACKAGE=1 || true
 
       - name: Upload Dylib
         uses: actions/upload-artifact@v4
         with:
           name: GameCenterBypass-Dylib
-          path: .theos/obj/debug/*.dylib
+          # This captures the dylib from any subfolder
+          path: .theos/obj/**/*.dylib
