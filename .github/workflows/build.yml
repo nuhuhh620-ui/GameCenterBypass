@@ -1,22 +1,40 @@
-#import <Foundation/Foundation.h>
-#import <GameKit/GameKit.h>
-#import <dlfcn.h>
+name: Build Dylib
 
-@interface GKLocalPlayer (PrivateGameCenterHook)
--(void)cancelAuthentication;
-@end
+on: [push]
 
-%hook GKLocalPlayer
+jobs:
+  build:
+    runs-on: macos-latest
+    env:
+      THEOS: ${{ github.workspace }}/theos
 
--(void)setAuthStartTimeStamp:(double)timestamp {
-    if ([self respondsToSelector:@selector(cancelAuthentication)]) {
-        [self cancelAuthentication];
-    }
-    %orig(timestamp);
-}
+    steps:
+      - uses: actions/checkout@v3
 
-%end
+      - name: Install Dependencies
+        run: |
+          brew install ldid
+          brew install make
 
-%ctor {
-    NSLog(@"[GameCenterBypass] Loaded!");
-}
+      - name: Install Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+
+      - name: Download iOS SDK
+        run: |
+          curl -L -o iPhoneOS14.5.sdk.tar.xz https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz
+          mkdir -p $THEOS/sdks
+          tar -xf iPhoneOS14.5.sdk.tar.xz -C $THEOS/sdks/
+          rm iPhoneOS14.5.sdk.tar.xz
+
+      - name: Build Tweak
+        run: |
+          # messages=yes prints the specific error if it fails again
+          make package FINALPACKAGE=1 messages=yes
+
+      - name: Upload Dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameCenterBypass-Dylib
+          # Changed path to capture dylib from any subfolder in obj
+          path: .theos/obj/**/*.dylib
