@@ -1,0 +1,8 @@
+Package: com.Fake.gamecenterbypass
+Name: GameCenterBypass
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Bypasses GameCenter Authentication
+Maintainer: fake
+Author: fake
+Section: Tweaks
