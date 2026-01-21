@@ -13,26 +13,50 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install ldid make
+          brew update
+          # install xz so we can handle .tar.xz, plus existing tools
+          brew install ldid make xz
 
       - name: Install Theos
         run: |
           git clone --depth 1 --recursive https://github.com/theos/theos.git $THEOS
 
-      - name: Download SDK (Official)
+      - name: Download SDK (Official) - robust
         run: |
-          # 1. Download the official .tar.xz SDK (Reliable Link)
-          curl -LO https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz
-          
-          # 2. Create the destination folder
-          mkdir -p $THEOS/sdks
-          
-          # 3. Extract the SDK directly into the folder
-          # (Note: We use 'tar' because the official file is .tar.xz, not .zip)
-          tar -xf iPhoneOS14.5.sdk.tar.xz -C $THEOS/sdks/
-          
-          # 4. Clean up
-          rm iPhoneOS14.5.sdk.tar.xz
+          set -euo pipefail
+
+          SDK_URL="https://github.com/theos/sdks/releases/download/14.5/iPhoneOS14.5.sdk.tar.xz"
+          SDK_FILE="iPhoneOS14.5.sdk.tar.xz"
+          DEST="$THEOS/sdks"
+
+          mkdir -p "$DEST"
+
+          # Download with retries and fail on HTTP errors (prevents saving HTML error pages)
+          echo "Downloading $SDK_URL"
+          curl -fL --retry 3 --retry-delay 5 -o "$SDK_FILE" "$SDK_URL"
+
+          # Basic validation
+          if [ ! -s "$SDK_FILE" ]; then
+            echo "::error::Downloaded SDK is empty or missing. Check $SDK_URL"
+            ls -l "$SDK_FILE" || true
+            exit 1
+          fi
+
+          echo "Downloaded file info:"
+          ls -lh "$SDK_FILE"
+          file "$SDK_FILE" || true
+
+          # Try to extract directly with tar -xJf, fallback to xz -d then tar -xf
+          if tar -xJf "$SDK_FILE" -C "$DEST/"; then
+            echo "Extracted SDK with tar -xJf"
+          else
+            echo "tar -xJf failed, trying xz -d then tar -xf"
+            xz -d -f "$SDK_FILE"   # produces .tar
+            tar -xf "${SDK_FILE%.xz}" -C "$DEST/"
+          fi
+
+          # Cleanup downloaded archives
+          rm -f "$SDK_FILE" "${SDK_FILE%.xz}" || true
 
       - name: Build Dylib
         run: |
